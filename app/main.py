@@ -10,7 +10,8 @@ from sqlalchemy import Column, Integer, String, create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker, Session
 
 # Database configuration
-DATABASE_URL = "postgresql://user:password@localhost/dbname"
+# Using SQLite for simplicity
+DATABASE_URL = "sqlite:///./jdauth.db"
 
 engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
@@ -41,7 +42,8 @@ class Token(BaseModel):
 
 
 # Security utils
-SECRET_KEY = "change_this_secret_key"
+SECRET_KEY = "your_secure_secret_key_here"
+# Make sure to use a strong secret key in production
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
@@ -135,3 +137,8 @@ def login(user: UserCreate, db: Session = Depends(get_db)):
 @app.get("/protected")
 def protected_route(current_user: User = Depends(get_current_user)):
     return {"message": f"Hello, {current_user.username}!"}
+
+
+@app.get("/test")
+def test_route():
+    return {"status": "success", "message": "API server is running correctly!", "timestamp": datetime.utcnow().isoformat()}
