@@ -26,7 +26,7 @@ class TestAuthRoutes:
             "password": "secure_password123"
         }
         
-        response = client.post("/auth/register", json=user_data)
+        response = client.post("/api/auth/register", json=user_data)
         
         assert response.status_code == status.HTTP_201_CREATED
         data = response.json()
@@ -47,12 +47,12 @@ class TestAuthRoutes:
             "password": "password123"
         }
         
-        response = client.post("/auth/register", json=user_data)
+        response = client.post("/api/auth/register", json=user_data)
         
         assert response.status_code == status.HTTP_400_BAD_REQUEST
         data = response.json()
-        assert "detail" in data
-        assert "already exists" in data["detail"].lower() or "already registered" in data["detail"].lower()
+        assert "message" in data
+        assert "already exists" in data["message"].lower() or "already registered" in data["message"].lower()
 
     def test_register_invalid_data(self, client: TestClient):
         """Test registration with invalid data fails."""
@@ -70,7 +70,7 @@ class TestAuthRoutes:
         ]
         
         for user_data in test_cases:
-            response = client.post("/auth/register", json=user_data)
+            response = client.post("/api/auth/register", json=user_data)
             assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
 
     def test_login_success(self, client: TestClient, db_session):
@@ -93,7 +93,7 @@ class TestAuthRoutes:
                 expires_in=1800
             )
             
-            response = client.post("/auth/login", json=login_data)
+            response = client.post("/api/auth/login", json=login_data)
             
             assert response.status_code == status.HTTP_200_OK
             data = response.json()
@@ -108,12 +108,12 @@ class TestAuthRoutes:
             "password": "wrongpassword"
         }
         
-        response = client.post("/auth/login", json=login_data)
+        response = client.post("/api/auth/login", json=login_data)
         
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
         data = response.json()
-        assert "detail" in data
-        assert "invalid" in data["detail"].lower() or "incorrect" in data["detail"].lower()
+        assert "message" in data
+        assert "invalid" in data["message"].lower() or "incorrect" in data["message"].lower()
 
     def test_login_invalid_data(self, client: TestClient):
         """Test login with invalid data fails."""
@@ -129,7 +129,7 @@ class TestAuthRoutes:
         ]
         
         for login_data in test_cases:
-            response = client.post("/auth/login", json=login_data)
+            response = client.post("/api/auth/login", json=login_data)
             assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
 
     def test_refresh_token_success(self, client: TestClient):
@@ -138,38 +138,38 @@ class TestAuthRoutes:
         # rejects unauthenticated requests. A full integration test would require
         # a complete auth flow which is tested in integration tests.
         
-        response = client.post("/auth/refresh")
+        response = client.post("/api/auth/refresh")
         
         # Should return 401 for unauthenticated request (endpoint exists and works)
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
         data = response.json()
-        assert "detail" in data
+        assert "message" in data
         
         # Test with invalid token
         headers = {"Authorization": "Bearer invalid_token"}
-        response = client.post("/auth/refresh", headers=headers)
+        response = client.post("/api/auth/refresh", headers=headers)
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
     def test_refresh_token_invalid(self, client: TestClient):
         """Test token refresh with invalid token fails."""
         headers = {"Authorization": "Bearer invalid_token"}
-        response = client.post("/auth/refresh", headers=headers)
+        response = client.post("/api/auth/refresh", headers=headers)
         
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
         data = response.json()
-        assert "detail" in data
+        assert "message" in data
 
     def test_refresh_token_missing_authorization(self, client: TestClient):
         """Test token refresh without authorization header fails."""
-        response = client.post("/auth/refresh")
+        response = client.post("/api/auth/refresh")
         
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
         data = response.json()
-        assert "detail" in data
+        assert "message" in data
 
     def test_auth_routes_cors_headers(self, client: TestClient):
         """Test that auth routes include proper CORS headers."""
-        response = client.options("/auth/register")
+        response = client.options("/api/auth/register")
         # This test will depend on CORS middleware configuration
         # For now, just ensure the endpoint exists
         assert response.status_code in [status.HTTP_200_OK, status.HTTP_405_METHOD_NOT_ALLOWED]
@@ -179,7 +179,7 @@ class TestAuthRoutes:
         # This is a placeholder for future rate limiting implementation
         # For now, just ensure multiple requests don't crash
         for _ in range(5):
-            response = client.post("/auth/login", json={"username": "test", "password": "test"})
+            response = client.post("/api/auth/login", json={"username": "test", "password": "test"})
             # Should not cause server errors
             assert response.status_code != status.HTTP_500_INTERNAL_SERVER_ERROR
 
@@ -187,7 +187,7 @@ class TestAuthRoutes:
         """Test proper error handling in auth routes."""
         # Test server error handling with invalid JSON
         response = client.post(
-            "/auth/register",
+            "/api/auth/register",
             data="invalid json",
             headers={"Content-Type": "application/json"}
         )
@@ -195,7 +195,7 @@ class TestAuthRoutes:
 
     def test_auth_routes_security_headers(self, client: TestClient):
         """Test that auth routes include security headers."""
-        response = client.post("/auth/login", json={"username": "test", "password": "test"})
+        response = client.post("/api/auth/login", json={"username": "test", "password": "test"})
         
         # Check for common security headers (if implemented)
         # These might be added by middleware

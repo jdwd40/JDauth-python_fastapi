@@ -14,8 +14,8 @@ from app.services.user_service import (
     delete_user,
     get_users
 )
-from app.schemas.user import UserCreate, UserUpdate
 from app.models.user import User
+from app.schemas.user import UserCreate, UserUpdate
 from tests.factories import (
     UserCreateFactory,
     UserUpdateFactory,
@@ -267,6 +267,10 @@ class TestGetUsers:
     @pytest.mark.unit
     def test_get_users_empty_database(self, db_session: Session):
         """Test getting users from empty database."""
+        # Ensure database is clean for this test
+        db_session.query(User).delete()
+        db_session.commit()
+        
         # Act
         users = get_users(db_session, skip=0, limit=10)
         
@@ -276,6 +280,10 @@ class TestGetUsers:
     @pytest.mark.unit
     def test_get_users_default_parameters(self, db_session: Session):
         """Test getting users with default pagination parameters."""
+        # Ensure clean state
+        db_session.query(User).delete()
+        db_session.commit()
+        
         # Arrange
         create_multiple_users_in_db(db_session, count=3)
         
@@ -288,6 +296,10 @@ class TestGetUsers:
     @pytest.mark.unit
     def test_get_users_limit_exceeds_available(self, db_session: Session):
         """Test getting users when limit exceeds available users."""
+        # Ensure clean state
+        db_session.query(User).delete()
+        db_session.commit()
+        
         # Arrange
         create_multiple_users_in_db(db_session, count=3)
         

@@ -22,7 +22,7 @@ class TestUserRoutes:
         """Test successful retrieval of user profile."""
         client, user = authenticated_client
         
-        response = client.get("/user/profile")
+        response = client.get("/api/user/profile")
         
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
@@ -33,20 +33,20 @@ class TestUserRoutes:
 
     def test_get_profile_unauthorized(self, client: TestClient):
         """Test profile retrieval without authentication fails."""
-        response = client.get("/user/profile")
+        response = client.get("/api/user/profile")
         
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
         data = response.json()
-        assert "detail" in data
+        assert "message" in data
 
     def test_get_profile_invalid_token(self, client: TestClient):
         """Test profile retrieval with invalid token fails."""
         headers = {"Authorization": "Bearer invalid_token"}
-        response = client.get("/user/profile", headers=headers)
+        response = client.get("/api/user/profile", headers=headers)
         
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
         data = response.json()
-        assert "detail" in data
+        assert "message" in data
 
     def test_update_profile_success(self, authenticated_client):
         """Test successful profile update."""
@@ -56,7 +56,7 @@ class TestUserRoutes:
             "username": "newusername"
         }
         
-        response = client.put("/user/profile", json=update_data)
+        response = client.put("/api/user/profile", json=update_data)
         
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
@@ -67,11 +67,11 @@ class TestUserRoutes:
         """Test profile update without authentication fails."""
         update_data = {"username": "newusername"}
         
-        response = client.put("/user/profile", json=update_data)
+        response = client.put("/api/user/profile", json=update_data)
         
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
         data = response.json()
-        assert "detail" in data
+        assert "message" in data
 
     def test_update_profile_invalid_data(self, authenticated_client):
         """Test profile update with invalid data fails."""
@@ -87,14 +87,14 @@ class TestUserRoutes:
         ]
         
         for update_data in test_cases:
-            response = client.put("/user/profile", json=update_data)
+            response = client.put("/api/user/profile", json=update_data)
             assert response.status_code in [status.HTTP_422_UNPROCESSABLE_ENTITY, status.HTTP_400_BAD_REQUEST]
 
     def test_protected_endpoint_success(self, authenticated_client):
         """Test successful access to protected endpoint."""
         client, user = authenticated_client
         
-        response = client.get("/user/protected")
+        response = client.get("/api/user/protected")
         
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
@@ -103,17 +103,17 @@ class TestUserRoutes:
 
     def test_protected_endpoint_unauthorized(self, client: TestClient):
         """Test protected endpoint without authentication fails."""
-        response = client.get("/user/protected")
+        response = client.get("/api/user/protected")
         
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
         data = response.json()
-        assert "detail" in data
+        assert "message" in data
 
     def test_get_users_list_success_admin(self, admin_client):
         """Test successful retrieval of users list by admin."""
         client, admin_user = admin_client
         
-        response = client.get("/users")
+        response = client.get("/api/users")
         
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
@@ -129,7 +129,7 @@ class TestUserRoutes:
         """Test users list with pagination parameters."""
         client, admin_user = admin_client
         
-        response = client.get("/users?skip=0&limit=5")
+        response = client.get("/api/users?skip=0&limit=5")
         
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
@@ -141,20 +141,20 @@ class TestUserRoutes:
         """Test users list access denied for non-admin users."""
         client, regular_user = authenticated_client
         
-        response = client.get("/users")
+        response = client.get("/api/users")
         
         assert response.status_code == status.HTTP_403_FORBIDDEN
         data = response.json()
-        assert "detail" in data
-        assert "admin" in data["detail"].lower()
+        assert "message" in data
+        assert "admin" in data["message"].lower()
 
     def test_get_users_list_unauthorized(self, client: TestClient):
         """Test users list without authentication fails."""
-        response = client.get("/users")
+        response = client.get("/api/users")
         
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
         data = response.json()
-        assert "detail" in data
+        assert "message" in data
 
     def test_get_users_list_invalid_pagination(self, admin_client):
         """Test users list with invalid pagination parameters."""
@@ -170,7 +170,7 @@ class TestUserRoutes:
         ]
         
         for params in test_cases:
-            response = client.get(f"/users{params}")
+            response = client.get(f"/api/users{params}")
             assert response.status_code in [status.HTTP_422_UNPROCESSABLE_ENTITY, status.HTTP_400_BAD_REQUEST]
 
     def test_user_routes_error_handling(self, client: TestClient):
@@ -180,7 +180,7 @@ class TestUserRoutes:
         
         # Invalid JSON for profile update
         response = client.put(
-            "/user/profile",
+            "/api/user/profile",
             data="invalid json",
             headers={**headers, "Content-Type": "application/json"}
         )
@@ -190,7 +190,7 @@ class TestUserRoutes:
         """Test that user routes return properly formatted responses."""
         client, user = authenticated_client
         
-        response = client.get("/user/protected")
+        response = client.get("/api/user/protected")
         
         assert response.status_code == status.HTTP_200_OK
         assert response.headers["content-type"] == "application/json"
