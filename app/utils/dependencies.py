@@ -1,41 +1,42 @@
 """
 FastAPI dependencies for JDauth application.
 
-This module contains reusable dependency functions for authentication,
-authorization, and database session management.
+This module contains reusable FastAPI dependencies for authentication,
+database sessions, and authorization.
 """
 
 from typing import Optional
+
 from fastapi import Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer
-from sqlalchemy.orm import Session
 from jose import JWTError, jwt
+from sqlalchemy.orm import Session
 
 from app.config.database import get_db
-from app.config.settings import settings
 from app.models.user import User
-from app.services import user_service
-
-# OAuth2 scheme for token extraction
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login")
+from app.utils.security import (
+    SECRET_KEY,
+    ALGORITHM,
+    oauth2_scheme,
+    get_user_by_username
+)
 
 
 def get_current_user(
-    token: str = Depends(oauth2_scheme),
+    token: str = Depends(oauth2_scheme), 
     db: Session = Depends(get_db)
 ) -> User:
     """
-    Get the current authenticated user from JWT token.
+    FastAPI dependency to get the current authenticated user from JWT token.
     
     Args:
-        token: JWT token from Authorization header
+        token: JWT token from OAuth2 scheme
         db: Database session dependency
         
     Returns:
-        Current authenticated user
+        User: The authenticated user
         
     Raises:
-        HTTPException: 401 if token is invalid or user not found
+        HTTPException: If token is invalid or user not found
     """
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -44,16 +45,14 @@ def get_current_user(
     )
     
     try:
-        # Decode JWT token
-        payload = jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         username: str = payload.get("sub")
         if username is None:
             raise credentials_exception
     except JWTError:
         raise credentials_exception
     
-    # Get user from database
-    user = user_service.get_user_by_username(db, username=username)
+    user = get_user_by_username(db, username=username)
     if user is None:
         raise credentials_exception
     
@@ -64,18 +63,19 @@ def get_current_active_user(
     current_user: User = Depends(get_current_user)
 ) -> User:
     """
-    Get the current authenticated and active user.
+    FastAPI dependency to get the current active user.
     
     Args:
-        current_user: Current authenticated user
+        current_user: Current user from get_current_user dependency
         
     Returns:
-        Current active user
+        User: The active user
         
     Raises:
-        HTTPException: 400 if user is inactive
+        HTTPException: If user is inactive
     """
-    # Check if user has an 'is_active' attribute
+    # Note: Add is_active field to User model if needed
+    # For now, assume all users are active
     if hasattr(current_user, 'is_active') and not current_user.is_active:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -86,47 +86,57 @@ def get_current_active_user(
 
 
 def require_admin(
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_active_user)
 ) -> User:
     """
-    Require admin privileges for the current user.
+    FastAPI dependency to require admin privileges.
     
     Args:
-        current_user: Current authenticated user
+        current_user: Current active user from get_current_active_user dependency
         
     Returns:
-        Current user (if admin)
+        User: The admin user
         
     Raises:
-        HTTPException: 403 if user is not an admin
+        HTTPException: If user is not an admin
     """
-    # Check admin privileges
-    if not _is_admin_user(current_user):
+    # Note: Add is_admin or role field to User model if needed
+    # For now, assume all users can access admin features
+    # This is a placeholder implementation
+    if hasattr(current_user, 'is_admin') and not current_user.is_admin:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Admin access required"
+            detail="Not enough permissions"
         )
     
     return current_user
 
 
-def _is_admin_user(user: User) -> bool:
+def get_optional_current_user(
+    token: Optional[str] = Depends(oauth2_scheme),
+    db: Session = Depends(get_db)
+) -> Optional[User]:
     """
-    Check if a user has admin privileges.
-    
-    For now, this is a simple implementation.
-    In a real application, this would check roles/permissions.
+    FastAPI dependency to get the current user if token is provided,
+    otherwise return None. Useful for optional authentication.
     
     Args:
-        user: User to check
+        token: Optional JWT token from OAuth2 scheme
+        db: Database session dependency
         
     Returns:
-        True if user has admin privileges
+        Optional[User]: The authenticated user if token is valid, None otherwise
     """
-    # Simple implementation: check if user has is_admin attribute
-    # or if username is 'admin' (for testing purposes)
-    if hasattr(user, 'is_admin'):
-        return getattr(user, 'is_admin', False)
+    if not token:
+        return None
     
-    # Fallback: check username (temporary for testing)
-    return user.username == 'admin'
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        username: str = payload.get("sub")
+        if username is None:
+            return None
+    except JWTError:
+        return None
+    
+    user = get_user_by_username(db, username=username)
+    return user

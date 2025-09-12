@@ -5,25 +5,14 @@ Authentication service for handling user authentication, JWT tokens, and securit
 from typing import Optional, Dict, Any
 from datetime import datetime, timedelta, timezone
 from sqlalchemy.orm import Session
-from passlib.context import CryptContext
 from jose import JWTError, jwt
 
 from app.models.user import User
 from app.config.settings import settings
+from app.utils.security import verify_password
 
-
-# Password hashing context
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
-# JWT settings
-SECRET_KEY = settings.secret_key
-ALGORITHM = settings.algorithm
-ACCESS_TOKEN_EXPIRE_MINUTES = settings.access_token_expire_minutes
-
-
-def _verify_password(plain_password: str, hashed_password: str) -> bool:
-    """Verify a password against its hash."""
-    return pwd_context.verify(plain_password, hashed_password)
+# JWT settings (imported from utils.security)
+from app.utils.security import SECRET_KEY, ALGORITHM, ACCESS_TOKEN_EXPIRE_MINUTES
 
 
 def authenticate_user(db: Session, username: str, password: str) -> Optional[User]:
@@ -48,7 +37,7 @@ def authenticate_user(db: Session, username: str, password: str) -> Optional[Use
         return None
     
     # Verify password
-    if not _verify_password(password, user.hashed_password):
+    if not verify_password(password, user.hashed_password):
         return None
     
     return user

@@ -6,7 +6,6 @@ user registration, login, and token refresh functionality.
 """
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 
 from app.config.database import get_db
@@ -14,6 +13,7 @@ from app.controllers.auth_controller import AuthController
 from app.schemas.user import UserCreate
 from app.schemas.auth import LoginRequest, TokenResponse
 from app.utils.dependencies import get_current_user
+from app.utils.security import oauth2_scheme
 from app.models.user import User
 
 # Create router instance
@@ -21,9 +21,6 @@ router = APIRouter(prefix="/auth", tags=["Authentication"])
 
 # Initialize controller
 auth_controller = AuthController()
-
-# OAuth2 scheme for token extraction
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login")
 
 
 @router.post(

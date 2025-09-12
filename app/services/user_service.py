@@ -6,19 +6,10 @@ from typing import Optional, List
 from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
-from passlib.context import CryptContext
 
 from app.models.user import User
 from app.schemas.user import UserCreate, UserUpdate
-
-
-# Password hashing context
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
-
-def _hash_password(password: str) -> str:
-    """Hash a password using bcrypt."""
-    return pwd_context.hash(password)
+from app.utils.security import get_password_hash
 
 
 def create_user(db: Session, user_data: UserCreate) -> User:
@@ -48,7 +39,7 @@ def create_user(db: Session, user_data: UserCreate) -> User:
         raise ValueError("Username already exists")
     
     # Create new user with hashed password
-    hashed_password = _hash_password(user_data.password)
+    hashed_password = get_password_hash(user_data.password)
     db_user = User(
         username=user_data.username,
         hashed_password=hashed_password
@@ -129,7 +120,7 @@ def update_user(db: Session, user_id: int, user_data: UserUpdate) -> User:
         db_user.username = user_data.username
     
     if user_data.password:
-        db_user.hashed_password = _hash_password(user_data.password)
+        db_user.hashed_password = get_password_hash(user_data.password)
     
     # Manually update the timestamp
     db_user.updated_at = datetime.now(timezone.utc)
