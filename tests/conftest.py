@@ -102,6 +102,70 @@ def sample_user_update_data():
 
 
 @pytest.fixture
+def authenticated_client(db_session: Session):
+    """
+    Create a test client with authenticated user dependency override.
+    """
+    from app.utils.dependencies import get_current_user
+    from tests.factories import UserFactory
+    
+    # Create a test user
+    test_user = UserFactory(username="testuser")
+    db_session.add(test_user)
+    db_session.commit()
+    
+    def override_get_db():
+        try:
+            yield db_session
+        finally:
+            pass
+    
+    def override_get_current_user():
+        return test_user
+    
+    app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_current_user] = override_get_current_user
+    
+    with TestClient(app) as test_client:
+        yield test_client, test_user
+    
+    # Clean up dependency overrides
+    app.dependency_overrides.clear()
+
+
+@pytest.fixture
+def admin_client(db_session: Session):
+    """
+    Create a test client with admin user dependency override.
+    """
+    from app.utils.dependencies import get_current_user
+    from tests.factories import UserFactory
+    
+    # Create an admin test user
+    admin_user = UserFactory(username="admin")
+    db_session.add(admin_user)
+    db_session.commit()
+    
+    def override_get_db():
+        try:
+            yield db_session
+        finally:
+            pass
+    
+    def override_get_current_user():
+        return admin_user
+    
+    app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_current_user] = override_get_current_user
+    
+    with TestClient(app) as test_client:
+        yield test_client, admin_user
+    
+    # Clean up dependency overrides
+    app.dependency_overrides.clear()
+
+
+@pytest.fixture
 def multiple_users_data():
     """Multiple users data for pagination testing."""
     return [

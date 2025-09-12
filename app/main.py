@@ -16,6 +16,10 @@ from app.models.user import User
 from app.schemas.user import UserCreate
 from app.schemas.auth import TokenResponse
 
+# Import new routers
+from app.routes.auth import router as auth_router
+from app.routes.user import router as user_router, admin_router
+
 
 # Security utils - now using settings from configuration
 SECRET_KEY = settings.secret_key
@@ -76,38 +80,28 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     return user
 
 
-app = FastAPI()
+app = FastAPI(
+    title="JDauth FastAPI Application",
+    description="Authentication service with JWT tokens",
+    version="1.0.0"
+)
+
+# Include routers
+app.include_router(auth_router)
+app.include_router(user_router)
+app.include_router(admin_router)
 
 
-@app.post("/register", status_code=status.HTTP_201_CREATED)
-def register(user: UserCreate, db: Session = Depends(get_db)):
-    if get_user(db, user.username):
-        raise HTTPException(status_code=400, detail="Username already registered")
-    hashed_password = get_password_hash(user.password)
-    db_user = User(username=user.username, hashed_password=hashed_password)
-    db.add(db_user)
-    db.commit()
-    db.refresh(db_user)
-    return {"msg": "User created"}
-
-
-@app.post("/login", response_model=TokenResponse)
-def login(user: UserCreate, db: Session = Depends(get_db)):
-    db_user = authenticate_user(db, user.username, user.password)
-    if not db_user:
-        raise HTTPException(status_code=400, detail="Incorrect username or password")
-    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    access_token = create_access_token(
-        data={"sub": db_user.username}, expires_delta=access_token_expires
-    )
-    return {"access_token": access_token, "token_type": "bearer"}
-
-
-@app.get("/protected")
-def protected_route(current_user: User = Depends(get_current_user)):
-    return {"message": f"Hello, {current_user.username}!"}
-
-
+# Legacy endpoints for backward compatibility
 @app.get("/test")
 def test_route():
     return {"status": "success", "message": "API server is running correctly!", "timestamp": datetime.utcnow().isoformat()}
+
+@app.get("/")
+def root():
+    return {
+        "message": "JDauth FastAPI Application",
+        "version": "1.0.0",
+        "docs": "/docs",
+        "health": "/test"
+    }
