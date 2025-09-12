@@ -5,60 +5,29 @@ from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 from passlib.context import CryptContext
-from pydantic import BaseModel
-from sqlalchemy import Column, Integer, String, create_engine
-from sqlalchemy.orm import declarative_base, sessionmaker, Session
+from sqlalchemy.orm import Session
 
-# Database configuration
-# Using SQLite for simplicity
-DATABASE_URL = "sqlite:///./jdauth.db"
+# Import new configuration and models
+from app.config.database import get_db
+from app.config.settings import settings
+from app.models.user import User
 
-engine = create_engine(DATABASE_URL)
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-Base = declarative_base()
-
-
-class User(Base):
-    __tablename__ = "users"
-
-    id = Column(Integer, primary_key=True, index=True)
-    username = Column(String(50), unique=True, index=True, nullable=False)
-    hashed_password = Column(String(128), nullable=False)
+# Import Pydantic schemas
+from app.schemas.user import UserCreate
+from app.schemas.auth import TokenResponse
 
 
-# Create tables
-Base.metadata.create_all(bind=engine)
-
-
-# Pydantic models
-class UserCreate(BaseModel):
-    username: str
-    password: str
-
-
-class Token(BaseModel):
-    access_token: str
-    token_type: str
-
-
-# Security utils
-SECRET_KEY = "your_secure_secret_key_here"
-# Make sure to use a strong secret key in production
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 30
+# Security utils - now using settings from configuration
+SECRET_KEY = settings.secret_key
+ALGORITHM = settings.algorithm
+ACCESS_TOKEN_EXPIRE_MINUTES = settings.access_token_expire_minutes
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 
 
 # Helper functions
-
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+# get_db is now imported from app.config.database
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
@@ -122,7 +91,7 @@ def register(user: UserCreate, db: Session = Depends(get_db)):
     return {"msg": "User created"}
 
 
-@app.post("/login", response_model=Token)
+@app.post("/login", response_model=TokenResponse)
 def login(user: UserCreate, db: Session = Depends(get_db)):
     db_user = authenticate_user(db, user.username, user.password)
     if not db_user:
