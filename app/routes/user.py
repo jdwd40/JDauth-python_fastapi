@@ -7,19 +7,30 @@ profile management, protected routes, and user administration.
 
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 from app.config.database import get_db
 from app.controllers.user_controller import UserController
-from app.schemas.user import UserResponse, UserUpdate
-from app.utils.dependencies import get_current_user
+from app.controllers.dashboard_controller import DashboardController
+from app.schemas.user import UserResponse, UserUpdate, UserCreate, UserRoleAssignment, UserStatusUpdate
+from app.schemas.analytics import (
+    DashboardStats,
+    UserSearchFilters,
+    UserSearchResult,
+    BulkUserOperation,
+    BulkOperationResult,
+    UserExportRequest
+)
+from app.utils.dependencies import get_current_user, require_admin
 from app.models.user import User
 
 # Create router instance
 router = APIRouter(prefix="/user", tags=["User Management"])
 
-# Initialize controller
+# Initialize controllers
 user_controller = UserController()
+dashboard_controller = DashboardController()
 
 
 @router.get(
@@ -136,11 +147,13 @@ admin_router = APIRouter(tags=["User Administration"])
     "/users",
     response_model=List[UserResponse],
     summary="List all users (Admin only)",
-    description="Retrieve a paginated list of all users. Requires admin privileges."
+    description="Retrieve a paginated list of all users with optional filtering. Requires admin privileges."
 )
 def get_users_list(
     skip: int = Query(0, ge=0, description="Number of users to skip for pagination"),
     limit: int = Query(100, ge=1, le=100, description="Maximum number of users to return"),
+    role: Optional[str] = Query(None, description="Filter by user role (admin/user)"),
+    is_active: Optional[bool] = Query(None, description="Filter by active status"),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -150,6 +163,8 @@ def get_users_list(
     Args:
         skip: Number of users to skip for pagination
         limit: Maximum number of users to return (1-100)
+        role: Optional role filter (admin/user)
+        is_active: Optional active status filter
         current_user: Current authenticated user (must be admin)
         db: Database session dependency
         
@@ -163,7 +178,7 @@ def get_users_list(
         HTTPException: 500 if internal server error occurs
     """
     try:
-        users_list = user_controller.get_user_list(db, current_user, skip, limit)
+        users_list = user_controller.get_user_list(db, current_user, skip, limit, role, is_active)
         return users_list
     except HTTPException:
         # Re-raise HTTP exceptions from controller
@@ -198,6 +213,517 @@ def user_health_check():
             "/users"
         ]
     }
+
+
+# Task 3: Enhanced User Management Features
+
+@admin_router.get(
+    "/admin/dashboard/stats",
+    response_model=DashboardStats,
+    summary="Get dashboard statistics (Admin only)",
+    description="Retrieve comprehensive dashboard statistics including user counts and growth data. Requires admin privileges."
+)
+def get_dashboard_stats(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Get dashboard statistics (admin only).
+    
+    Args:
+        current_user: Current authenticated user (must be admin)
+        db: Database session dependency
+        
+    Returns:
+        Dashboard statistics including user counts and growth data
+        
+    Raises:
+        HTTPException: 401 if user is not authenticated
+        HTTPException: 403 if user is not an admin
+        HTTPException: 500 if internal server error occurs
+    """
+    try:
+        stats = dashboard_controller.get_dashboard_statistics(db, current_user)
+        return stats
+    except HTTPException:
+        # Re-raise HTTP exceptions from controller
+        raise
+    except Exception as e:
+        # Handle unexpected errors
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to retrieve dashboard statistics"
+        )
+
+
+@admin_router.get(
+    "/admin/users/search",
+    response_model=UserSearchResult,
+    summary="Advanced user search (Admin only)",
+    description="Search users with advanced filtering, sorting, and pagination. Requires admin privileges."
+)
+def search_users(
+    query: Optional[str] = Query(None, description="Search query for username"),
+    role: Optional[str] = Query(None, description="Filter by user role"),
+    is_active: Optional[bool] = Query(None, description="Filter by active status"),
+    created_after: Optional[str] = Query(None, description="Filter users created after this date (ISO format)"),
+    created_before: Optional[str] = Query(None, description="Filter users created before this date (ISO format)"),
+    skip: int = Query(0, ge=0, description="Number of users to skip for pagination"),
+    limit: int = Query(100, ge=1, le=1000, description="Maximum number of users to return"),
+    sort_by: Optional[str] = Query("created_at", description="Field to sort by"),
+    sort_order: Optional[str] = Query("desc", description="Sort order: asc or desc"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Advanced user search with filtering and pagination (admin only).
+    
+    Args:
+        query: Optional search query for username
+        role: Optional role filter
+        is_active: Optional active status filter
+        created_after: Optional date filter (users created after)
+        created_before: Optional date filter (users created before)
+        skip: Number of users to skip for pagination
+        limit: Maximum number of users to return
+        sort_by: Field to sort by
+        sort_order: Sort order (asc/desc)
+        current_user: Current authenticated user (must be admin)
+        db: Database session dependency
+        
+    Returns:
+        Search results with users and pagination info
+        
+    Raises:
+        HTTPException: 401 if user is not authenticated
+        HTTPException: 403 if user is not an admin
+        HTTPException: 400 if parameters are invalid
+        HTTPException: 500 if internal server error occurs
+    """
+    try:
+        from datetime import datetime
+        
+        # Parse date filters if provided
+        created_after_dt = None
+        created_before_dt = None
+        
+        if created_after:
+            try:
+                created_after_dt = datetime.fromisoformat(created_after.replace("Z", "+00:00"))
+            except ValueError:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid created_after date format. Use ISO format."
+                )
+        
+        if created_before:
+            try:
+                created_before_dt = datetime.fromisoformat(created_before.replace("Z", "+00:00"))
+            except ValueError:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid created_before date format. Use ISO format."
+                )
+        
+        # Create filters object
+        filters = UserSearchFilters(
+            query=query,
+            role=role,
+            is_active=is_active,
+            created_after=created_after_dt,
+            created_before=created_before_dt,
+            skip=skip,
+            limit=limit,
+            sort_by=sort_by,
+            sort_order=sort_order
+        )
+        
+        result = dashboard_controller.search_users(db, current_user, filters)
+        return result
+    except HTTPException:
+        # Re-raise HTTP exceptions from controller
+        raise
+    except Exception as e:
+        # Handle unexpected errors
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to search users"
+        )
+
+
+@admin_router.post(
+    "/admin/users/bulk",
+    response_model=BulkOperationResult,
+    summary="Bulk user operations (Admin only)",
+    description="Perform bulk operations on multiple users (activate/deactivate). Requires admin privileges."
+)
+def bulk_user_operation(
+    operation: BulkUserOperation,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Perform bulk operations on users (admin only).
+    
+    Args:
+        operation: Bulk operation details (user IDs and operation type)
+        current_user: Current authenticated user (must be admin)
+        db: Database session dependency
+        
+    Returns:
+        Results of the bulk operation
+        
+    Raises:
+        HTTPException: 401 if user is not authenticated
+        HTTPException: 403 if user is not an admin
+        HTTPException: 400 if operation parameters are invalid
+        HTTPException: 500 if internal server error occurs
+    """
+    try:
+        result = dashboard_controller.bulk_user_operation(db, current_user, operation)
+        return result
+    except HTTPException:
+        # Re-raise HTTP exceptions from controller
+        raise
+    except Exception as e:
+        # Handle unexpected errors
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to perform bulk operation"
+        )
+
+
+@admin_router.post(
+    "/admin/users/export",
+    summary="Export users data (Admin only)",
+    description="Export users data in CSV or JSON format with optional filtering. Requires admin privileges."
+)
+def export_users(
+    export_request: UserExportRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Export users data (admin only).
+    
+    Args:
+        export_request: Export configuration (format, filters, options)
+        current_user: Current authenticated user (must be admin)
+        db: Database session dependency
+        
+    Returns:
+        Exported data as file download
+        
+    Raises:
+        HTTPException: 401 if user is not authenticated
+        HTTPException: 403 if user is not an admin
+        HTTPException: 400 if export parameters are invalid
+        HTTPException: 500 if internal server error occurs
+    """
+    try:
+        from datetime import datetime
+        
+        content = dashboard_controller.export_users(db, current_user, export_request)
+        
+        # Set appropriate content type and headers
+        if export_request.format == "csv":
+            media_type = "text/csv"
+            filename = f"users_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+        else:  # json
+            media_type = "application/json"
+            filename = f"users_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+        
+        return Response(
+            content=content,
+            media_type=media_type,
+            headers={
+                "Content-Disposition": f"attachment; filename={filename}"
+            }
+        )
+    except HTTPException:
+        # Re-raise HTTP exceptions from controller
+        raise
+    except Exception as e:
+        # Handle unexpected errors
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to export users"
+        )
+
+
+# Existing Admin CRUD Routes
+
+@admin_router.post(
+    "/admin/users",
+    response_model=UserResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create new user (Admin only)",
+    description="Create a new user account. Requires admin privileges."
+)
+def admin_create_user(
+    user_data: UserCreate,
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db)
+):
+    """
+    Create a new user (admin only).
+    
+    Args:
+        user_data: User creation data
+        current_user: Current authenticated admin user
+        db: Database session dependency
+        
+    Returns:
+        Created user profile information
+        
+    Raises:
+        HTTPException: 401 if user is not authenticated
+        HTTPException: 403 if user is not an admin
+        HTTPException: 400 if validation fails or username exists
+        HTTPException: 500 if internal server error occurs
+    """
+    try:
+        created_user = user_controller.admin_create_user(db, current_user, user_data)
+        return created_user
+    except HTTPException:
+        # Re-raise HTTP exceptions from controller
+        raise
+    except Exception as e:
+        # Handle unexpected errors
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to create user"
+        )
+
+
+@admin_router.get(
+    "/admin/users/{user_id}",
+    response_model=UserResponse,
+    summary="Get user by ID (Admin only)",
+    description="Retrieve detailed information about a specific user. Requires admin privileges."
+)
+def admin_get_user_by_id(
+    user_id: int,
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db)
+):
+    """
+    Get a specific user by ID (admin only).
+    
+    Args:
+        user_id: ID of the user to retrieve
+        current_user: Current authenticated admin user
+        db: Database session dependency
+        
+    Returns:
+        User profile information
+        
+    Raises:
+        HTTPException: 401 if user is not authenticated
+        HTTPException: 403 if user is not an admin
+        HTTPException: 404 if user not found
+        HTTPException: 400 if user_id is invalid
+        HTTPException: 500 if internal server error occurs
+    """
+    try:
+        user_info = user_controller.admin_get_user_by_id(db, current_user, user_id)
+        return user_info
+    except HTTPException:
+        # Re-raise HTTP exceptions from controller
+        raise
+    except Exception as e:
+        # Handle unexpected errors
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to retrieve user"
+        )
+
+
+@admin_router.put(
+    "/admin/users/{user_id}",
+    response_model=UserResponse,
+    summary="Update user (Admin only)",
+    description="Update user information. Requires admin privileges. Admins cannot modify their own accounts."
+)
+def admin_update_user(
+    user_id: int,
+    update_data: UserUpdate,
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db)
+):
+    """
+    Update a user's information (admin only).
+    
+    Args:
+        user_id: ID of the user to update
+        update_data: User update data
+        current_user: Current authenticated admin user
+        db: Database session dependency
+        
+    Returns:
+        Updated user profile information
+        
+    Raises:
+        HTTPException: 401 if user is not authenticated
+        HTTPException: 403 if user is not an admin or trying to modify own account
+        HTTPException: 404 if user not found
+        HTTPException: 400 if validation fails or username exists
+        HTTPException: 500 if internal server error occurs
+    """
+    try:
+        updated_user = user_controller.admin_update_user(db, current_user, user_id, update_data)
+        return updated_user
+    except HTTPException:
+        # Re-raise HTTP exceptions from controller
+        raise
+    except Exception as e:
+        # Handle unexpected errors
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to update user"
+        )
+
+
+@admin_router.delete(
+    "/admin/users/{user_id}",
+    summary="Delete user (Admin only)",
+    description="Delete a user account. Requires admin privileges. Admins cannot delete their own accounts."
+)
+def admin_delete_user(
+    user_id: int,
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db)
+):
+    """
+    Delete a user (admin only).
+    
+    Args:
+        user_id: ID of the user to delete
+        current_user: Current authenticated admin user
+        db: Database session dependency
+        
+    Returns:
+        Deletion confirmation message
+        
+    Raises:
+        HTTPException: 401 if user is not authenticated
+        HTTPException: 403 if user is not an admin or trying to delete own account
+        HTTPException: 404 if user not found
+        HTTPException: 400 if user_id is invalid
+        HTTPException: 500 if internal server error occurs
+    """
+    try:
+        result = user_controller.admin_delete_user(db, current_user, user_id)
+        return result
+    except HTTPException:
+        # Re-raise HTTP exceptions from controller
+        raise
+    except Exception as e:
+        # Handle unexpected errors
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to delete user"
+        )
+
+
+@admin_router.put(
+    "/admin/users/{user_id}/role",
+    response_model=UserResponse,
+    summary="Assign role to user (Admin only)",
+    description="Assign a role to a specific user. Requires admin privileges. Admins cannot modify their own roles."
+)
+def assign_user_role(
+    user_id: int,
+    role_data: UserRoleAssignment,
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db)
+):
+    """
+    Assign a role to a user (admin only).
+    
+    Args:
+        user_id: ID of the user to update
+        role_data: Role assignment data
+        current_user: Current authenticated admin user
+        db: Database session dependency
+        
+    Returns:
+        Updated user profile information
+        
+    Raises:
+        HTTPException: 401 if user is not authenticated
+        HTTPException: 403 if user is not an admin or trying to modify own role
+        HTTPException: 404 if user not found
+        HTTPException: 400 if validation fails or invalid role
+        HTTPException: 500 if internal server error occurs
+    """
+    try:
+        updated_user = user_controller.assign_user_role(
+            db, 
+            current_user, 
+            user_id, 
+            role_data.role.value
+        )
+        return updated_user
+    except HTTPException:
+        # Re-raise HTTP exceptions from controller
+        raise
+    except Exception as e:
+        # Handle unexpected errors
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to assign user role"
+        )
+
+
+@admin_router.put(
+    "/admin/users/{user_id}/status",
+    response_model=UserResponse,
+    summary="Set user status (Admin only)",
+    description="Set user active/inactive status. Requires admin privileges. Admins cannot modify their own status."
+)
+def set_user_status(
+    user_id: int,
+    status_data: UserStatusUpdate,
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db)
+):
+    """
+    Set a user's active status (admin only).
+    
+    Args:
+        user_id: ID of the user to update
+        status_data: Status update data
+        current_user: Current authenticated admin user
+        db: Database session dependency
+        
+    Returns:
+        Updated user profile information
+        
+    Raises:
+        HTTPException: 401 if user is not authenticated
+        HTTPException: 403 if user is not an admin or trying to modify own status
+        HTTPException: 404 if user not found
+        HTTPException: 400 if validation fails
+        HTTPException: 500 if internal server error occurs
+    """
+    try:
+        updated_user = user_controller.set_user_status(
+            db, 
+            current_user, 
+            user_id, 
+            status_data.is_active
+        )
+        return updated_user
+    except HTTPException:
+        # Re-raise HTTP exceptions from controller
+        raise
+    except Exception as e:
+        # Handle unexpected errors
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to set user status"
+        )
 
 
 # Note: admin_router is exported separately and included in main.py

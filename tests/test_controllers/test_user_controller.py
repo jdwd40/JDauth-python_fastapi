@@ -31,6 +31,8 @@ class TestUserController:
         user.id = 1
         user.username = "testuser"
         user.hashed_password = "hashed_password"
+        user.role = "user"
+        user.is_active = True
         user.created_at = datetime.now(timezone.utc)
         user.updated_at = datetime.now(timezone.utc)
         return user
@@ -42,7 +44,8 @@ class TestUserController:
         user.id = 2
         user.username = "admin"
         user.hashed_password = "admin_password"
-        user.is_admin = True
+        user.role = "admin"
+        user.is_active = True
         user.created_at = datetime.now(timezone.utc)
         user.updated_at = datetime.now(timezone.utc)
         return user
@@ -78,6 +81,8 @@ class TestUserController:
         updated_user = Mock(spec=User)
         updated_user.id = 1
         updated_user.username = "updated_user"
+        updated_user.role = "user"
+        updated_user.is_active = True
         updated_user.created_at = datetime.now(timezone.utc)
         updated_user.updated_at = datetime.now(timezone.utc)
         
@@ -133,11 +138,15 @@ class TestUserController:
         """Test getting user list as admin."""
         # Arrange
         now = datetime.now(timezone.utc)
-        mock_users = [
-            Mock(spec=User, id=1, username="user1", created_at=now),
-            Mock(spec=User, id=2, username="user2", created_at=now),
-            Mock(spec=User, id=3, username="user3", created_at=now)
-        ]
+        mock_users = []
+        for i in range(1, 4):
+            user = Mock(spec=User)
+            user.id = i
+            user.username = f"user{i}"
+            user.role = "user"
+            user.is_active = True
+            user.created_at = now
+            mock_users.append(user)
         
         with patch('app.controllers.user_controller.user_service.get_users', return_value=mock_users) as mock_get_users:
             # Act

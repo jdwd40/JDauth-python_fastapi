@@ -21,6 +21,8 @@ class UserFactory(factory.Factory):
     hashed_password = factory.LazyAttribute(
         lambda obj: "$2b$12$EixZaYVK1fsbw1ZfbX3OXePaWxn96p02TrN5eTfGir2D6GlgL2m3u"  # "secret"
     )
+    role = "user"  # Default role
+    is_active = True  # Default active status
     created_at = factory.LazyFunction(datetime.utcnow)
     updated_at = factory.LazyFunction(datetime.utcnow)
 
@@ -71,7 +73,9 @@ def create_user_in_db(db: Session, **kwargs) -> User:
         "hashed_password": kwargs.get(
             "hashed_password", 
             "$2b$12$EixZaYVK1fsbw1ZfbX3OXePaWxn96p02TrN5eTfGir2D6GlgL2m3u"  # "secret"
-        )
+        ),
+        "role": kwargs.get("role", "user"),
+        "is_active": kwargs.get("is_active", True)
     }
     user_data.update(kwargs)
     

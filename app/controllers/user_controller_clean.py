@@ -89,9 +89,7 @@ class UserController:
         db: Session, 
         current_user: Optional[User], 
         skip: int = 0, 
-        limit: int = 100,
-        role: Optional[str] = None,
-        is_active: Optional[bool] = None
+        limit: int = 100
     ) -> List[UserResponse]:
         """
         Get a list of users (admin only).
@@ -141,24 +139,8 @@ class UserController:
             )
         
         try:
-            # Get users through service layer with filtering
-            if role is not None and is_active is not None:
-                # Filter by both role and status - need to implement this
-                all_users = user_service.get_users(db, skip=0, limit=1000)  # Get more to filter
-                filtered_users = [
-                    user for user in all_users 
-                    if user.role == role and user.is_active == is_active
-                ][skip:skip+limit]
-                users = filtered_users
-            elif role is not None:
-                # Filter by role only
-                users = user_service.get_users_by_role(db, role, skip=skip, limit=limit)
-            elif is_active is not None:
-                # Filter by status only
-                users = user_service.get_users_by_status(db, is_active, skip=skip, limit=limit)
-            else:
-                # No filtering
-                users = user_service.get_users(db, skip=skip, limit=limit)
+            # Get users through service layer
+            users = user_service.get_users(db, skip=skip, limit=limit)
             
             return [UserResponse.model_validate(user) for user in users]
             

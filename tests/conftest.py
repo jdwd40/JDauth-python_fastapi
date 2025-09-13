@@ -142,7 +142,7 @@ def admin_client(db_session: Session):
     from tests.factories import UserFactory
     
     # Create an admin test user
-    admin_user = UserFactory(username="admin")
+    admin_user = UserFactory(username="admin", role="admin")
     db_session.add(admin_user)
     db_session.commit()
     

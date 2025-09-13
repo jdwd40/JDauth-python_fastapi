@@ -74,9 +74,8 @@ def get_current_active_user(
     Raises:
         HTTPException: If user is inactive
     """
-    # Note: Add is_active field to User model if needed
-    # For now, assume all users are active
-    if hasattr(current_user, 'is_active') and not current_user.is_active:
+    # Check if user is active
+    if not current_user.is_active:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Inactive user"
@@ -100,13 +99,11 @@ def require_admin(
     Raises:
         HTTPException: If user is not an admin
     """
-    # Note: Add is_admin or role field to User model if needed
-    # For now, assume all users can access admin features
-    # This is a placeholder implementation
-    if hasattr(current_user, 'is_admin') and not current_user.is_admin:
+    # Check if user has admin privileges using role field
+    if current_user.role != "admin":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not enough permissions"
+            detail="Admin access required"
         )
     
     return current_user
