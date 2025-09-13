@@ -14,6 +14,9 @@ from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.middleware.httpsredirect import HTTPSRedirectMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import Response
 from sqlalchemy.exc import SQLAlchemyError
 
 # Import configuration and database
@@ -90,6 +93,32 @@ app.add_middleware(
 )
 
 
+# Security Headers Middleware
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    """Middleware to add security headers to all responses."""
+    
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        
+        # Add security headers
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
+        
+        # Remove server information
+        if "server" in response.headers:
+            del response.headers["server"]
+        
+        return response
+
+
+# Add security headers middleware
+app.add_middleware(SecurityHeadersMiddleware)
+
+
 # Global exception handler
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request: Request, exc: HTTPException):
@@ -153,7 +182,8 @@ def health_check() -> Dict[str, Any]:
     try:
         # Test database connection
         with engine.connect() as conn:
-            conn.execute("SELECT 1")
+            from sqlalchemy import text
+            conn.execute(text("SELECT 1"))
         
         return {
             "status": "healthy",

@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     
     # Application settings
     app_name: str = "JDauth FastAPI"
-    debug: bool = False
+    debug: bool = True  # Enable for testing
     
     # PostgreSQL admin settings for database creation
     postgres_admin_url: str = "postgresql://JD:K1ller1921@localhost:5432/postgres"

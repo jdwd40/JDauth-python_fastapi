@@ -15,7 +15,7 @@ from app.utils.security import verify_password
 from app.utils.security import SECRET_KEY, ALGORITHM, ACCESS_TOKEN_EXPIRE_MINUTES
 
 
-def authenticate_user(db: Session, username: str, password: str) -> Optional[User]:
+def authenticate_user(db: Session, username: str, password: str, ip_address: Optional[str] = None) -> Optional[User]:
     """
     Authenticate a user with username and password.
     
@@ -23,22 +23,49 @@ def authenticate_user(db: Session, username: str, password: str) -> Optional[Use
         db: Database session
         username: Username to authenticate
         password: Plain text password
+        ip_address: IP address of the login attempt (for security tracking)
     
     Returns:
         User instance if authentication successful, None otherwise
     """
     # Handle empty credentials
     if not username or not password:
+        if username:
+            # Log failed login attempt for empty password
+            from app.services.security_service import SecurityService
+            SecurityService.record_failed_login(username, db, ip_address, "empty_password")
+        return None
+    
+    # Check if account is locked
+    from app.services.security_service import failed_login_tracker
+    is_locked, lockout_until = failed_login_tracker.is_account_locked(username)
+    if is_locked:
+        from app.services.security_service import SecurityService
+        SecurityService.record_failed_login(username, db, ip_address, "account_locked")
         return None
     
     # Get user from database
     user = db.query(User).filter(User.username == username).first()
     if not user:
+        from app.services.security_service import SecurityService
+        SecurityService.record_failed_login(username, db, ip_address, "user_not_found")
+        return None
+    
+    # Check if user is active
+    if not user.is_active:
+        from app.services.security_service import SecurityService
+        SecurityService.record_failed_login(username, db, ip_address, "account_inactive")
         return None
     
     # Verify password
     if not verify_password(password, user.hashed_password):
+        from app.services.security_service import SecurityService
+        SecurityService.record_failed_login(username, db, ip_address, "invalid_password")
         return None
+    
+    # Successful authentication - clear failed attempts and log success
+    from app.services.security_service import SecurityService
+    SecurityService.record_successful_login(username, user.id, db, ip_address)
     
     return user
 

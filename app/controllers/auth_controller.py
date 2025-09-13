@@ -56,13 +56,14 @@ class AuthController:
                 detail="Internal server error"
             )
 
-    def login_user(self, db: Session, credentials: LoginRequest) -> TokenResponse:
+    def login_user(self, db: Session, credentials: LoginRequest, ip_address: str = None) -> TokenResponse:
         """
         Authenticate user and generate access token.
         
         Args:
             db: Database session
             credentials: User login credentials
+            ip_address: IP address of the login attempt (for security tracking)
             
         Returns:
             JWT token response
@@ -71,9 +72,9 @@ class AuthController:
             HTTPException: If authentication fails
         """
         try:
-            # Authenticate user
+            # Authenticate user with IP tracking
             user = auth_service.authenticate_user(
-                db, credentials.username, credentials.password
+                db, credentials.username, credentials.password, ip_address
             )
             
             if not user:

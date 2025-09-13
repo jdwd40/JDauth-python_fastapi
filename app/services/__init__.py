@@ -30,6 +30,24 @@ from .analytics_service import (
     get_user_statistics
 )
 
+from .audit_service import (
+    log_audit_event,
+    log_user_action,
+    log_authentication_event,
+    log_security_event,
+    get_audit_logs,
+    get_security_events,
+    get_user_audit_logs,
+    get_recent_audit_logs
+)
+
+from .security_service import (
+    SecurityService,
+    admin_rate_limiter,
+    auth_rate_limiter,
+    failed_login_tracker
+)
+
 __all__ = [
     # User service
     "create_user",
@@ -54,5 +72,21 @@ __all__ = [
     "export_users_json",
     "get_user_growth_data",
     "count_recent_registrations",
-    "get_user_statistics"
+    "get_user_statistics",
+    
+    # Audit service
+    "log_audit_event",
+    "log_user_action",
+    "log_authentication_event",
+    "log_security_event",
+    "get_audit_logs",
+    "get_security_events",
+    "get_user_audit_logs",
+    "get_recent_audit_logs",
+    
+    # Security service
+    "SecurityService",
+    "admin_rate_limiter",
+    "auth_rate_limiter",
+    "failed_login_tracker"
 ]

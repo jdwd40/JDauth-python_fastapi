@@ -22,6 +22,7 @@ from app.schemas.analytics import (
     BulkOperationResult,
     UserExportRequest
 )
+from app.schemas.audit import AuditLogSearchResult, AuditLogResponse
 from app.utils.dependencies import get_current_user, require_admin
 from app.models.user import User
 
@@ -723,6 +724,365 @@ def set_user_status(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to set user status"
+        )
+
+
+# Task 4: Security & Audit System - Audit Log Endpoints
+
+@admin_router.get(
+    "/admin/audit/logs",
+    response_model=AuditLogSearchResult,
+    summary="Get audit logs (Admin only)",
+    description="Retrieve audit logs with filtering and pagination. Requires admin privileges."
+)
+def get_audit_logs(
+    action: Optional[str] = Query(None, description="Filter by audit action"),
+    resource_type: Optional[str] = Query(None, description="Filter by resource type"),
+    user_id: Optional[int] = Query(None, description="Filter by user ID"),
+    username: Optional[str] = Query(None, description="Filter by username"),
+    status: Optional[str] = Query(None, description="Filter by status (success/failed/error)"),
+    is_security_event: Optional[str] = Query(None, description="Filter by security event type"),
+    severity_level: Optional[str] = Query(None, description="Filter by severity level"),
+    created_after: Optional[str] = Query(None, description="Filter logs created after this date (ISO format)"),
+    created_before: Optional[str] = Query(None, description="Filter logs created before this date (ISO format)"),
+    skip: int = Query(0, ge=0, description="Number of logs to skip for pagination"),
+    limit: int = Query(100, ge=1, le=1000, description="Maximum number of logs to return"),
+    sort_by: str = Query("created_at", description="Field to sort by"),
+    sort_order: str = Query("desc", description="Sort order: asc or desc"),
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db)
+):
+    """
+    Get audit logs with filtering and pagination (admin only).
+    
+    Args:
+        action: Optional audit action filter
+        resource_type: Optional resource type filter
+        user_id: Optional user ID filter
+        username: Optional username filter
+        status: Optional status filter
+        is_security_event: Optional security event filter
+        severity_level: Optional severity level filter
+        created_after: Optional date filter (logs created after)
+        created_before: Optional date filter (logs created before)
+        skip: Number of logs to skip for pagination
+        limit: Maximum number of logs to return
+        sort_by: Field to sort by
+        sort_order: Sort order (asc/desc)
+        current_user: Current authenticated admin user
+        db: Database session dependency
+        
+    Returns:
+        Audit logs with pagination information
+        
+    Raises:
+        HTTPException: 401 if user is not authenticated
+        HTTPException: 403 if user is not an admin
+        HTTPException: 400 if parameters are invalid
+        HTTPException: 500 if internal server error occurs
+    """
+    try:
+        from datetime import datetime
+        from app.schemas.audit import AuditLogFilters, AuditAction, AuditStatus, SecurityEventType, SeverityLevel
+        from app.services.audit_service import get_audit_logs
+        
+        # Parse date filters if provided
+        created_after_dt = None
+        created_before_dt = None
+        
+        if created_after:
+            try:
+                created_after_dt = datetime.fromisoformat(created_after.replace("Z", "+00:00"))
+            except ValueError:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid created_after date format. Use ISO format."
+                )
+        
+        if created_before:
+            try:
+                created_before_dt = datetime.fromisoformat(created_before.replace("Z", "+00:00"))
+            except ValueError:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid created_before date format. Use ISO format."
+                )
+        
+        # Convert string filters to enums
+        action_enum = None
+        if action:
+            try:
+                action_enum = AuditAction(action)
+            except ValueError:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Invalid action: {action}"
+                )
+        
+        status_enum = None
+        if status:
+            try:
+                status_enum = AuditStatus(status)
+            except ValueError:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Invalid status: {status}"
+                )
+        
+        security_event_enum = None
+        if is_security_event:
+            try:
+                security_event_enum = SecurityEventType(is_security_event)
+            except ValueError:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Invalid security event type: {is_security_event}"
+                )
+        
+        severity_enum = None
+        if severity_level:
+            try:
+                severity_enum = SeverityLevel(severity_level)
+            except ValueError:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Invalid severity level: {severity_level}"
+                )
+        
+        # Create filters object
+        filters = AuditLogFilters(
+            action=action_enum,
+            resource_type=resource_type,
+            user_id=user_id,
+            username=username,
+            status=status_enum,
+            is_security_event=security_event_enum,
+            severity_level=severity_enum,
+            created_after=created_after_dt,
+            created_before=created_before_dt,
+            skip=skip,
+            limit=limit,
+            sort_by=sort_by,
+            sort_order=sort_order
+        )
+        
+        result = get_audit_logs(db, filters)
+        
+        # Log the audit log access
+        from app.services.audit_service import log_user_action
+        log_user_action(
+            db=db,
+            action=AuditAction.VIEW_AUDIT_LOGS,
+            user_id=current_user.id,
+            username=current_user.username,
+            description=f"Viewed audit logs with filters: {filters.dict()}",
+            details={"filters": filters.dict()}
+        )
+        
+        return result
+    except HTTPException:
+        # Re-raise HTTP exceptions
+        raise
+    except Exception as e:
+        # Handle unexpected errors
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to retrieve audit logs"
+        )
+
+
+@admin_router.get(
+    "/admin/audit/security-events",
+    response_model=List[AuditLogResponse],
+    summary="Get security events (Admin only)",
+    description="Retrieve recent security events. Requires admin privileges."
+)
+def get_security_events(
+    limit: int = Query(100, ge=1, le=500, description="Maximum number of events to return"),
+    severity_level: Optional[str] = Query(None, description="Filter by severity level"),
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db)
+):
+    """
+    Get recent security events (admin only).
+    
+    Args:
+        limit: Maximum number of events to return
+        severity_level: Optional severity level filter
+        current_user: Current authenticated admin user
+        db: Database session dependency
+        
+    Returns:
+        List of security event audit logs
+        
+    Raises:
+        HTTPException: 401 if user is not authenticated
+        HTTPException: 403 if user is not an admin
+        HTTPException: 400 if parameters are invalid
+        HTTPException: 500 if internal server error occurs
+    """
+    try:
+        from app.schemas.audit import SeverityLevel
+        from app.services.audit_service import get_security_events
+        
+        # Convert string filter to enum
+        severity_enum = None
+        if severity_level:
+            try:
+                severity_enum = SeverityLevel(severity_level)
+            except ValueError:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Invalid severity level: {severity_level}"
+                )
+        
+        events = get_security_events(db, limit=limit, severity_level=severity_enum)
+        
+        # Log the security events access
+        from app.services.audit_service import log_user_action
+        log_user_action(
+            db=db,
+            action=AuditAction.VIEW_AUDIT_LOGS,
+            user_id=current_user.id,
+            username=current_user.username,
+            description=f"Viewed security events (limit: {limit}, severity: {severity_level})",
+            details={"limit": limit, "severity_level": severity_level}
+        )
+        
+        return events
+    except HTTPException:
+        # Re-raise HTTP exceptions
+        raise
+    except Exception as e:
+        # Handle unexpected errors
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to retrieve security events"
+        )
+
+
+@admin_router.get(
+    "/admin/security/summary",
+    summary="Get security summary (Admin only)",
+    description="Get a summary of recent security events and statistics. Requires admin privileges."
+)
+def get_security_summary(
+    hours: int = Query(24, ge=1, le=168, description="Number of hours to look back"),
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db)
+):
+    """
+    Get security summary (admin only).
+    
+    Args:
+        hours: Number of hours to look back
+        current_user: Current authenticated admin user
+        db: Database session dependency
+        
+    Returns:
+        Security summary with event statistics
+        
+    Raises:
+        HTTPException: 401 if user is not authenticated
+        HTTPException: 403 if user is not an admin
+        HTTPException: 400 if parameters are invalid
+        HTTPException: 500 if internal server error occurs
+    """
+    try:
+        from app.services.security_service import SecurityService
+        
+        summary = SecurityService.get_security_summary(db, hours=hours)
+        
+        # Log the security summary access
+        from app.services.audit_service import log_user_action
+        log_user_action(
+            db=db,
+            action=AuditAction.ACCESS_ADMIN_DASHBOARD,
+            user_id=current_user.id,
+            username=current_user.username,
+            description=f"Accessed security summary (hours: {hours})",
+            details={"hours": hours, "summary": summary}
+        )
+        
+        return summary
+    except HTTPException:
+        # Re-raise HTTP exceptions
+        raise
+    except Exception as e:
+        # Handle unexpected errors
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to retrieve security summary"
+        )
+
+
+@admin_router.get(
+    "/admin/audit/users/{user_id}/logs",
+    response_model=List[AuditLogResponse],
+    summary="Get user audit logs (Admin only)",
+    description="Get audit logs for a specific user. Requires admin privileges."
+)
+def get_user_audit_logs(
+    user_id: int,
+    limit: int = Query(50, ge=1, le=200, description="Maximum number of logs to return"),
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db)
+):
+    """
+    Get audit logs for a specific user (admin only).
+    
+    Args:
+        user_id: ID of the user to get logs for
+        limit: Maximum number of logs to return
+        current_user: Current authenticated admin user
+        db: Database session dependency
+        
+    Returns:
+        List of audit logs for the user
+        
+    Raises:
+        HTTPException: 401 if user is not authenticated
+        HTTPException: 403 if user is not an admin
+        HTTPException: 404 if user not found
+        HTTPException: 400 if parameters are invalid
+        HTTPException: 500 if internal server error occurs
+    """
+    try:
+        from app.services.audit_service import get_user_audit_logs
+        from app.services.user_service import get_user_by_id
+        
+        # Verify user exists
+        target_user = get_user_by_id(db, user_id)
+        if not target_user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found"
+            )
+        
+        logs = get_user_audit_logs(db, user_id=user_id, limit=limit)
+        
+        # Log the user audit logs access
+        from app.services.audit_service import log_user_action
+        log_user_action(
+            db=db,
+            action=AuditAction.VIEW_AUDIT_LOGS,
+            user_id=current_user.id,
+            username=current_user.username,
+            target_user_id=user_id,
+            target_username=target_user.username,
+            description=f"Viewed audit logs for user '{target_user.username}'",
+            details={"target_user_id": user_id, "limit": limit}
+        )
+        
+        return logs
+    except HTTPException:
+        # Re-raise HTTP exceptions
+        raise
+    except Exception as e:
+        # Handle unexpected errors
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to retrieve user audit logs"
         )
 
 

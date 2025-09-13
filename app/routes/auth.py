@@ -5,7 +5,7 @@ This module contains all authentication-related API endpoints including
 user registration, login, and token refresh functionality.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.orm import Session
 
 from app.config.database import get_db
@@ -70,6 +70,7 @@ def register(
 )
 def login(
     credentials: LoginRequest,
+    request: Request,
     db: Session = Depends(get_db)
 ):
     """
@@ -88,7 +89,10 @@ def login(
         HTTPException: 500 if internal server error occurs
     """
     try:
-        token_response = auth_controller.login_user(db, credentials)
+        # Extract IP address for security tracking
+        ip_address = _get_client_ip(request)
+        
+        token_response = auth_controller.login_user(db, credentials, ip_address)
         return token_response
     except HTTPException:
         # Re-raise HTTP exceptions from controller
@@ -139,6 +143,24 @@ def refresh_token(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Token refresh failed due to server error"
         )
+
+
+def _get_client_ip(request: Request) -> str:
+    """Extract client IP address from request."""
+    # Check for forwarded headers first
+    forwarded_for = request.headers.get("x-forwarded-for")
+    if forwarded_for:
+        return forwarded_for.split(",")[0].strip()
+    
+    real_ip = request.headers.get("x-real-ip")
+    if real_ip:
+        return real_ip
+    
+    # Fall back to direct client IP
+    if hasattr(request, "client") and request.client:
+        return request.client.host
+    
+    return "unknown"
 
 
 # Health check endpoint for auth routes
